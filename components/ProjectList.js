@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { FaSearch, FaTrash, FaEdit, FaCheck, FaTimes, FaEye, FaDownload } from 'react-icons/fa';
+import { FaSearch, FaTrash, FaEdit, FaCheck, FaTimes, FaEye, FaChartBar } from 'react-icons/fa';
 import { useRouter } from 'next/navigation';
 
 // 상수 정의
@@ -63,16 +63,6 @@ const api = {
     }
     
     return response.json();
-  },
-
-  downloadProject: async (id) => {
-    const response = await fetch(`/api/download/${id}`);
-    
-    if (!response.ok) {
-      throw new Error('다운로드 실패');
-    }
-    
-    return response.blob();
   }
 };
 
@@ -249,31 +239,15 @@ export default function ProjectList({ projects = [], onRefresh }) {
     }
   }, [selectedProjects, projects, onRefresh]);
 
-  // 프로젝트 보기 (검수 시트로 이동)
-  const handleView = useCallback((projectId) => {
-    router.push(`/sheet/${projectId}`);
+  // 평가표 보기 (해당 프로젝트만)
+  const handleViewEvaluation = useCallback((projectId) => {
+    router.push(`/project-summary/${projectId}`);
   }, [router]);
 
-  // 프로젝트 다운로드
-  const handleDownload = useCallback(async (project) => {
-    try {
-      const blob = await api.downloadProject(project.id);
-      
-      // 다운로드 링크 생성
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = `${project.projectName || 'project'}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error('다운로드 오류:', error);
-      alert('다운로드 중 오류가 발생했습니다.');
-    }
-  }, []);
+  // 검수 시트 보기
+  const handleViewSheet = useCallback((projectId) => {
+    router.push(`/sheet/${projectId}`);
+  }, [router]);
 
   // 테이블 헤더 렌더링 최적화
   const renderTableHeader = useMemo(() => (
@@ -406,21 +380,14 @@ export default function ProjectList({ projects = [], onRefresh }) {
                   </button>
                 </>
               ) : (
-                // 일반 모드일 때
+                // 일반 모드일 때 - 수정된 3개 버튼만
                 <>
                   <button
-                    onClick={() => handleView(project.id)}
-                    className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors"
-                    title="검수 시트 보기"
+                    onClick={() => handleViewEvaluation(project.id)}
+                    className="p-2 text-purple-600 hover:text-purple-800 hover:bg-purple-100 rounded transition-colors"
+                    title="평가표 보기"
                   >
-                    <FaEye size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleDownload(project)}
-                    className="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 rounded transition-colors"
-                    title="다운로드"
-                  >
-                    <FaDownload size={14} />
+                    <FaChartBar size={14} />
                   </button>
                   <button
                     onClick={() => handleEditStart(project)}
@@ -449,8 +416,7 @@ export default function ProjectList({ projects = [], onRefresh }) {
     editingProject, 
     editForm,
     handleProjectSelect, 
-    handleView,
-    handleDownload,
+    handleViewEvaluation,
     handleEditStart, 
     handleEditSave, 
     handleEditCancel, 
