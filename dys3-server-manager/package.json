@@ -1,0 +1,28 @@
+{
+  "name": "dys3-server-manager",
+  "version": "1.0.0",
+  "description": "DYS3 서버 관리 프로그램",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "node-cron": "^3.0.3",
+    "node-notifier": "^10.0.1"
+  },
+  "devDependencies": {
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.dys3.server-manager",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    }
+  }
+} 
