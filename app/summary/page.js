@@ -17,12 +17,17 @@ export default function Summary() {
   const [selectedManager, setSelectedManager] = useState(null);
   const [selectedManagerCategory, setSelectedManagerCategory] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [periodFilter, setPeriodFilter] = useState('all'); // 'all', '1year', '6months', '3months', '2months', '1month'
+  const [periodFilter, setPeriodFilter] = useState('all'); // 'all', '1year', '6months', '3months', '2months', '1month', 'custom'
   const [filteredData, setFilteredData] = useState([]);
+  
+  // 커스텀 날짜 필터 상태 추가
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
 
   useEffect(() => {
     loadSummaryData();
-  }, [periodFilter]);
+  }, [periodFilter, customStartDate, customEndDate]);
 
   const loadSummaryData = async () => {
     try {
@@ -33,6 +38,7 @@ export default function Summary() {
       // 기간 필터링
       const now = new Date();
       let startDate = null;
+      let endDate = now;
       
       switch (periodFilter) {
         case '1year':
@@ -55,6 +61,13 @@ export default function Summary() {
           startDate = new Date(now);
           startDate.setMonth(startDate.getMonth() - 1);
           break;
+        case 'custom':
+          if (customStartDate && customEndDate) {
+            startDate = new Date(customStartDate);
+            endDate = new Date(customEndDate);
+            endDate.setHours(23, 59, 59, 999); // 종료일 포함
+          }
+          break;
         default:
           startDate = null;
       }
@@ -63,7 +76,8 @@ export default function Summary() {
       const filteredProjects = startDate 
         ? projects.filter(p => {
             if (!p.inspectionDate) return false;
-            return new Date(p.inspectionDate) >= startDate;
+            const inspectionDate = new Date(p.inspectionDate);
+            return inspectionDate >= startDate && inspectionDate <= endDate;
           })
         : projects;
       
@@ -333,6 +347,10 @@ export default function Summary() {
   };
 
   const getDateRange = () => {
+    if (periodFilter === 'custom' && customStartDate && customEndDate) {
+      return `${customStartDate} ~ ${customEndDate}`;
+    }
+
     const now = new Date();
     let startDate = null;
     
@@ -375,6 +393,26 @@ export default function Summary() {
     return '';
   };
 
+  const handlePeriodChange = (period) => {
+    setPeriodFilter(period);
+    if (period === 'custom') {
+      setShowCustomDatePicker(true);
+    } else {
+      setShowCustomDatePicker(false);
+      setCustomStartDate('');
+      setCustomEndDate('');
+    }
+  };
+
+  const applyCustomDateFilter = () => {
+    if (customStartDate && customEndDate) {
+      setPeriodFilter('custom');
+      setShowCustomDatePicker(false);
+    } else {
+      alert('시작일과 종료일을 모두 입력해주세요.');
+    }
+  };
+
   const handleBack = () => {
     router.push('/');
   };
@@ -409,9 +447,9 @@ export default function Summary() {
       {/* 기간 필터 */}
       <div className="max-w-7xl mx-auto px-4 pt-6">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex space-x-1">
+          <div className="flex flex-wrap items-center space-x-1 gap-y-2">
             <button
-              onClick={() => setPeriodFilter('all')}
+              onClick={() => handlePeriodChange('all')}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 periodFilter === 'all'
                   ? 'bg-blue-500 text-white'
@@ -421,7 +459,7 @@ export default function Summary() {
               전체
             </button>
             <button
-              onClick={() => setPeriodFilter('1year')}
+              onClick={() => handlePeriodChange('1year')}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 periodFilter === '1year'
                   ? 'bg-blue-500 text-white'
@@ -431,7 +469,7 @@ export default function Summary() {
               1년
             </button>
             <button
-              onClick={() => setPeriodFilter('6months')}
+              onClick={() => handlePeriodChange('6months')}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 periodFilter === '6months'
                   ? 'bg-blue-500 text-white'
@@ -441,7 +479,7 @@ export default function Summary() {
               6개월
             </button>
             <button
-              onClick={() => setPeriodFilter('3months')}
+              onClick={() => handlePeriodChange('3months')}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 periodFilter === '3months'
                   ? 'bg-blue-500 text-white'
@@ -451,7 +489,7 @@ export default function Summary() {
               3개월
             </button>
             <button
-              onClick={() => setPeriodFilter('2months')}
+              onClick={() => handlePeriodChange('2months')}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 periodFilter === '2months'
                   ? 'bg-blue-500 text-white'
@@ -461,7 +499,7 @@ export default function Summary() {
               2개월
             </button>
             <button
-              onClick={() => setPeriodFilter('1month')}
+              onClick={() => handlePeriodChange('1month')}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 periodFilter === '1month'
                   ? 'bg-blue-500 text-white'
@@ -470,11 +508,65 @@ export default function Summary() {
             >
               1개월
             </button>
+            <button
+              onClick={() => handlePeriodChange('custom')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                periodFilter === 'custom'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              📅 기간 선택
+            </button>
           </div>
           <div className="text-sm text-gray-500">
             {getDateRange()}
           </div>
         </div>
+
+        {/* 커스텀 날짜 선택기 */}
+        {showCustomDatePicker && (
+          <div className="mb-4 p-4 bg-white rounded-lg shadow border">
+            <div className="flex items-center space-x-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  시작일
+                </label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  종료일
+                </label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex space-x-2 mt-6">
+                <button
+                  onClick={applyCustomDateFilter}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  적용
+                </button>
+                <button
+                  onClick={() => setShowCustomDatePicker(false)}
+                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 전체 점수 */}

@@ -1,12 +1,15 @@
+'use client';
+
 import { useState, useCallback, useMemo } from 'react';
-import { FaSearch, FaTrash, FaEdit, FaCheck } from 'react-icons/fa';
+import { FaSearch, FaTrash, FaEdit, FaCheck, FaTimes, FaEye, FaDownload } from 'react-icons/fa';
+import { useRouter } from 'next/navigation';
 
 // 상수 정의
 const CONSTANTS = {
   BATCH_SIZE: 5,
   DEBOUNCE_DELAY: 300,
   TABLE_COLUMNS: [
-    { id: 'projectName', label: '감리' },
+    { id: 'projectName', label: '프로젝트' },
     { id: 'location', label: '위치' },
     { id: 'generalManager', label: '총괄' },
     { id: 'inspector', label: '검수자' },
@@ -45,6 +48,31 @@ const api = {
     }
     
     return response.json();
+  },
+
+  updateProject: async (id, data) => {
+    const response = await fetch('/api/projects', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...data })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || '수정 실패');
+    }
+    
+    return response.json();
+  },
+
+  downloadProject: async (id) => {
+    const response = await fetch(`/api/download/${id}`);
+    
+    if (!response.ok) {
+      throw new Error('다운로드 실패');
+    }
+    
+    return response.blob();
   }
 };
 
@@ -66,10 +94,18 @@ const stateUtils = {
 };
 
 export default function ProjectList({ projects = [], onRefresh }) {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProjects, setSelectedProjects] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [uploadHistory, setUploadHistory] = useState([]);
+  const [editingProject, setEditingProject] = useState(null);
+  const [editForm, setEditForm] = useState({
+    projectName: '',
+    location: '',
+    generalManager: '',
+    inspector: '',
+    inspectionDate: ''
+  });
 
   // 검색어 변경 핸들러 최적화
   const handleSearchChange = useCallback(
@@ -99,6 +135,74 @@ export default function ProjectList({ projects = [], onRefresh }) {
   const handleSelectAll = useCallback(() => {
     setSelectedProjects(prev => stateUtils.updateAllSelected(prev, filteredProjects));
   }, [filteredProjects]);
+
+  // 편집 시작
+  const handleEditStart = useCallback((project) => {
+    setEditingProject(project.id);
+    setEditForm({
+      projectName: project.projectName || '',
+      location: project.location || '',
+      generalManager: project.generalManager || '',
+      inspector: project.inspector || '',
+      inspectionDate: project.inspectionDate || ''
+    });
+  }, []);
+
+  // 편집 취소
+  const handleEditCancel = useCallback(() => {
+    setEditingProject(null);
+    setEditForm({
+      projectName: '',
+      location: '',
+      generalManager: '',
+      inspector: '',
+      inspectionDate: ''
+    });
+  }, []);
+
+  // 편집 저장
+  const handleEditSave = useCallback(async (projectId) => {
+    try {
+      const result = await api.updateProject(projectId, editForm);
+      if (result.success) {
+        setEditingProject(null);
+        setEditForm({
+          projectName: '',
+          location: '',
+          generalManager: '',
+          inspector: '',
+          inspectionDate: ''
+        });
+        onRefresh?.();
+        alert('프로젝트가 수정되었습니다.');
+      } else {
+        throw new Error(result.error || '수정 실패');
+      }
+    } catch (error) {
+      console.error('프로젝트 수정 오류:', error);
+      alert('수정 중 오류가 발생했습니다: ' + error.message);
+    }
+  }, [editForm, onRefresh]);
+
+  // 개별 삭제
+  const handleSingleDelete = useCallback(async (project) => {
+    if (!confirm(`"${project.projectName}" 프로젝트를 삭제하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      const result = await api.deleteProject(project.id);
+      if (result.success) {
+        onRefresh?.();
+        alert('프로젝트가 삭제되었습니다.');
+      } else {
+        throw new Error(result.error || '삭제 실패');
+      }
+    } catch (error) {
+      console.error('프로젝트 삭제 오류:', error);
+      alert('삭제 중 오류가 발생했습니다: ' + error.message);
+    }
+  }, [onRefresh]);
 
   // 일괄 삭제 핸들러 최적화
   const handleBulkDelete = useCallback(async () => {
@@ -145,16 +249,30 @@ export default function ProjectList({ projects = [], onRefresh }) {
     }
   }, [selectedProjects, projects, onRefresh]);
 
-  // 업로드 이력 업데이트 최적화
-  const updateUploadHistory = useCallback((newHistory) => {
-    setUploadHistory(prev => {
-      const updated = [...prev, {
-        ...newHistory,
-        uploader: '관리자',
-        date: new Date().toLocaleString()
-      }];
-      return updated.slice(-5); // 최근 5개만 유지
-    });
+  // 프로젝트 보기 (검수 시트로 이동)
+  const handleView = useCallback((projectId) => {
+    router.push(`/sheet/${projectId}`);
+  }, [router]);
+
+  // 프로젝트 다운로드
+  const handleDownload = useCallback(async (project) => {
+    try {
+      const blob = await api.downloadProject(project.id);
+      
+      // 다운로드 링크 생성
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `${project.projectName || 'project'}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('다운로드 오류:', error);
+      alert('다운로드 중 오류가 발생했습니다.');
+    }
   }, []);
 
   // 테이블 헤더 렌더링 최적화
@@ -164,7 +282,7 @@ export default function ProjectList({ projects = [], onRefresh }) {
         <th className="px-4 py-2 border-b">
           <input
             type="checkbox"
-            checked={selectedProjects.length === filteredProjects.length}
+            checked={selectedProjects.length === filteredProjects.length && filteredProjects.length > 0}
             onChange={handleSelectAll}
             className="rounded"
           />
@@ -192,32 +310,152 @@ export default function ProjectList({ projects = [], onRefresh }) {
               className="rounded"
             />
           </td>
-          <td className="px-4 py-2 border-b">{project.projectName}</td>
-          <td className="px-4 py-2 border-b">{project.location}</td>
-          <td className="px-4 py-2 border-b">{project.generalManager}</td>
-          <td className="px-4 py-2 border-b">{project.inspector}</td>
-          <td className="px-4 py-2 border-b">{project.inspectionDate || '-'}</td>
-          <td className="px-4 py-2 border-b">{project.uploadDate}</td>
+          
+          {/* 프로젝트명 */}
           <td className="px-4 py-2 border-b">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => {/* 수정 기능 구현 */}}
-                className="p-1 text-blue-500 hover:text-blue-600"
-              >
-                <FaEdit />
-              </button>
-              <button
-                onClick={() => {/* 삭제 기능 구현 */}}
-                className="p-1 text-red-500 hover:text-red-600"
-              >
-                <FaTrash />
-              </button>
+            {editingProject === project.id ? (
+              <input
+                type="text"
+                value={editForm.projectName}
+                onChange={(e) => setEditForm({...editForm, projectName: e.target.value})}
+                className="w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            ) : (
+              project.projectName
+            )}
+          </td>
+          
+          {/* 위치 */}
+          <td className="px-4 py-2 border-b">
+            {editingProject === project.id ? (
+              <input
+                type="text"
+                value={editForm.location}
+                onChange={(e) => setEditForm({...editForm, location: e.target.value})}
+                className="w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            ) : (
+              project.location
+            )}
+          </td>
+          
+          {/* 총괄 */}
+          <td className="px-4 py-2 border-b">
+            {editingProject === project.id ? (
+              <input
+                type="text"
+                value={editForm.generalManager}
+                onChange={(e) => setEditForm({...editForm, generalManager: e.target.value})}
+                className="w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            ) : (
+              project.generalManager
+            )}
+          </td>
+          
+          {/* 검수자 */}
+          <td className="px-4 py-2 border-b">
+            {editingProject === project.id ? (
+              <input
+                type="text"
+                value={editForm.inspector}
+                onChange={(e) => setEditForm({...editForm, inspector: e.target.value})}
+                className="w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            ) : (
+              project.inspector
+            )}
+          </td>
+          
+          {/* 검수일자 */}
+          <td className="px-4 py-2 border-b">
+            {editingProject === project.id ? (
+              <input
+                type="date"
+                value={editForm.inspectionDate}
+                onChange={(e) => setEditForm({...editForm, inspectionDate: e.target.value})}
+                className="w-full px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            ) : (
+              project.inspectionDate || '-'
+            )}
+          </td>
+          
+          {/* 업로드일자 */}
+          <td className="px-4 py-2 border-b">{project.uploadDate}</td>
+          
+          {/* 관리 버튼들 */}
+          <td className="px-4 py-2 border-b">
+            <div className="flex space-x-1">
+              {editingProject === project.id ? (
+                // 편집 모드일 때
+                <>
+                  <button
+                    onClick={() => handleEditSave(project.id)}
+                    className="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 rounded transition-colors"
+                    title="저장"
+                  >
+                    <FaCheck size={14} />
+                  </button>
+                  <button
+                    onClick={handleEditCancel}
+                    className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+                    title="취소"
+                  >
+                    <FaTimes size={14} />
+                  </button>
+                </>
+              ) : (
+                // 일반 모드일 때
+                <>
+                  <button
+                    onClick={() => handleView(project.id)}
+                    className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors"
+                    title="검수 시트 보기"
+                  >
+                    <FaEye size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDownload(project)}
+                    className="p-2 text-green-600 hover:text-green-800 hover:bg-green-100 rounded transition-colors"
+                    title="다운로드"
+                  >
+                    <FaDownload size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleEditStart(project)}
+                    className="p-2 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-100 rounded transition-colors"
+                    title="편집"
+                  >
+                    <FaEdit size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleSingleDelete(project)}
+                    className="p-2 text-red-600 hover:text-red-800 hover:bg-red-100 rounded transition-colors"
+                    title="삭제"
+                  >
+                    <FaTrash size={14} />
+                  </button>
+                </>
+              )}
             </div>
           </td>
         </tr>
       ))}
     </tbody>
-  ), [filteredProjects, selectedProjects, handleProjectSelect]);
+  ), [
+    filteredProjects, 
+    selectedProjects, 
+    editingProject, 
+    editForm,
+    handleProjectSelect, 
+    handleView,
+    handleDownload,
+    handleEditStart, 
+    handleEditSave, 
+    handleEditCancel, 
+    handleSingleDelete
+  ]);
 
   return (
     <div className="space-y-4">
@@ -232,27 +470,56 @@ export default function ProjectList({ projects = [], onRefresh }) {
           />
           <FaSearch className="absolute left-3 top-3 text-gray-400" />
         </div>
-        <button
-          onClick={handleBulkDelete}
-          disabled={selectedProjects.length === 0 || isDeleting}
-          className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
-            selectedProjects.length === 0 || isDeleting
-              ? 'bg-gray-300 cursor-not-allowed'
-              : 'bg-red-500 hover:bg-red-600 text-white'
-          }`}
-        >
-          <FaTrash />
-          <span>선택 삭제</span>
-        </button>
+        <div className="flex space-x-2">
+          <button
+            onClick={handleBulkDelete}
+            disabled={selectedProjects.length === 0 || isDeleting}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
+              selectedProjects.length === 0 || isDeleting
+                ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                : 'bg-red-500 hover:bg-red-600 text-white'
+            }`}
+          >
+            <FaTrash />
+            <span>선택 삭제 ({selectedProjects.length})</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 프로젝트 개수 표시 */}
+      <div className="text-sm text-gray-600">
+        총 {filteredProjects.length}개 프로젝트
+        {searchTerm && ` (검색: "${searchTerm}")`}
       </div>
 
       {/* 프로젝트 목록 테이블 */}
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white border border-gray-200">
+      <div className="overflow-x-auto bg-white rounded-lg shadow">
+        <table className="min-w-full">
           {renderTableHeader}
           {renderTableRows}
         </table>
       </div>
+
+      {/* 빈 상태 */}
+      {filteredProjects.length === 0 && (
+        <div className="text-center py-8">
+          <div className="text-gray-500">
+            {searchTerm ? '검색 결과가 없습니다.' : '등록된 프로젝트가 없습니다.'}
+          </div>
+        </div>
+      )}
+
+      {/* 로딩 상태 */}
+      {isDeleting && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg">
+            <div className="flex items-center space-x-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+              <span>삭제 중...</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
