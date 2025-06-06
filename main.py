@@ -33,6 +33,69 @@ class InspectionServerManager:
         if self.config.get('auto_start', False):
             self.start_server()
     
+    def get_resource_path(self, relative_path):
+        """리소스 파일 경로 얻기 (PyInstaller 호환)"""
+        try:
+            # PyInstaller로 빌드된 경우
+            base_path = sys._MEIPASS
+        except Exception:
+            # 개발 환경
+            base_path = os.path.abspath(".")
+        
+        return os.path.join(base_path, relative_path)
+    
+    def get_node_paths(self):
+        """Node.js와 npm 경로 얻기"""
+        if getattr(sys, 'frozen', False):
+            # PyInstaller로 빌드된 경우 - 내장된 Node.js 사용
+            if sys.platform == "win32":
+                node_path = self.get_resource_path('node.exe')
+                npm_path = self.get_resource_path('npm.cmd')
+            else:
+                node_path = self.get_resource_path('node')
+                npm_path = self.get_resource_path('npm')
+        else:
+            # 개발 환경 - 시스템 Node.js 사용
+            node_path = shutil.which('node')
+            npm_path = shutil.which('npm') or shutil.which('npm.cmd')
+        
+        return node_path, npm_path
+    
+    def check_node_dependencies(self):
+        """Node.js 의존성 확인"""
+        node_path, npm_path = self.get_node_paths()
+        
+        if not node_path or not os.path.exists(node_path):
+            if getattr(sys, 'frozen', False):
+                messagebox.showerror(
+                    "빌드 오류", 
+                    "Node.js 런타임이 exe에 포함되지 않았습니다.\n"
+                    "개발자에게 문의하세요."
+                )
+            else:
+                messagebox.showerror(
+                    "Node.js 필요", 
+                    "이 프로그램을 실행하려면 Node.js가 설치되어 있어야 합니다.\n"
+                    "https://nodejs.org에서 다운로드하세요."
+                )
+            return False
+        
+        if not npm_path or not os.path.exists(npm_path):
+            if getattr(sys, 'frozen', False):
+                messagebox.showerror(
+                    "빌드 오류", 
+                    "npm이 exe에 포함되지 않았습니다.\n"
+                    "개발자에게 문의하세요."
+                )
+            else:
+                messagebox.showerror(
+                    "npm 필요", 
+                    "npm이 설치되어 있지 않습니다."
+                )
+            return False
+        
+        return True
+    
     def load_config(self):
         """설정 파일 로드"""
         default_config = {
@@ -45,8 +108,9 @@ class InspectionServerManager:
         }
         
         try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r', encoding='utf-8') as f:
+            config_path = self.get_resource_path(self.config_file)
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
                     self.config = {**default_config, **json.load(f)}
             else:
                 self.config = default_config
@@ -58,7 +122,8 @@ class InspectionServerManager:
     def save_config(self):
         """설정 파일 저장"""
         try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
+            config_path = self.get_resource_path(self.config_file)
+            with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
         except Exception as e:
             print(f"설정 저장 오류: {e}")
@@ -86,6 +151,14 @@ class InspectionServerManager:
         
         self.port_label = ttk.Label(status_frame, text=f"포트: {self.config['server_port']}")
         self.port_label.grid(row=1, column=0, sticky=tk.W)
+        
+        # Node.js 상태 표시
+        node_path, npm_path = self.get_node_paths()
+        if node_path and os.path.exists(node_path):
+            self.node_label = ttk.Label(status_frame, text="✓ Node.js 사용 가능", foreground="green")
+        else:
+            self.node_label = ttk.Label(status_frame, text="✗ Node.js 없음", foreground="red")
+        self.node_label.grid(row=2, column=0, sticky=tk.W)
         
         # 서버 제어 버튼
         button_frame = ttk.Frame(main_frame)
@@ -230,6 +303,10 @@ class InspectionServerManager:
             self.log_message("서버가 이미 실행 중입니다.")
             return
         
+        # Node.js 의존성 확인
+        if not self.check_node_dependencies():
+            return
+        
         try:
             # 필요한 폴더 생성
             os.makedirs(self.config['uploads_path'], exist_ok=True)
@@ -238,13 +315,24 @@ class InspectionServerManager:
             # 환경 변수 설정
             env = os.environ.copy()
             env['PORT'] = str(self.config['server_port'])
-            env['NODE_ENV'] = 'production'  # 프로덕션 모드 설정
+            env['NODE_ENV'] = 'production'
+            
+            # Node.js 경로 얻기
+            node_path, npm_path = self.get_node_paths()
             
             # Next.js 서버 시작
             self.log_message("서버를 시작하는 중...")
             
+            # 작업 디렉토리 설정
+            if getattr(sys, 'frozen', False):
+                # PyInstaller로 빌드된 경우
+                work_dir = self.get_resource_path('.')
+            else:
+                # 개발 환경
+                work_dir = os.getcwd()
+            
             # 프로덕션 모드로 서버 시작
-            cmd = ["npm", "start"]
+            cmd = [npm_path, 'start']
             
             self.server_process = subprocess.Popen(
                 cmd,
@@ -252,7 +340,7 @@ class InspectionServerManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
-                cwd=os.getcwd()
+                cwd=work_dir
             )
             
             # 서버 출력을 별도 스레드에서 모니터링
@@ -418,7 +506,12 @@ class InspectionServerManager:
         """업로드 폴더 열기"""
         try:
             os.makedirs(self.config['uploads_path'], exist_ok=True)
-            os.startfile(self.config['uploads_path'])
+            if sys.platform == "win32":
+                os.startfile(self.config['uploads_path'])
+            elif sys.platform == "darwin":
+                subprocess.run(["open", self.config['uploads_path']])
+            else:
+                subprocess.run(["xdg-open", self.config['uploads_path']])
         except Exception as e:
             self.log_message(f"폴더 열기 오류: {e}")
             messagebox.showerror("오류", f"폴더를 열 수 없습니다: {e}")
@@ -427,7 +520,12 @@ class InspectionServerManager:
         """데이터 폴더 열기"""
         try:
             os.makedirs(self.config['data_path'], exist_ok=True)
-            os.startfile(self.config['data_path'])
+            if sys.platform == "win32":
+                os.startfile(self.config['data_path'])
+            elif sys.platform == "darwin":
+                subprocess.run(["open", self.config['data_path']])
+            else:
+                subprocess.run(["xdg-open", self.config['data_path']])
         except Exception as e:
             self.log_message(f"폴더 열기 오류: {e}")
             messagebox.showerror("오류", f"폴더를 열 수 없습니다: {e}")

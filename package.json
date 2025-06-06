@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "cross-env PYTHONIOENCODING=utf-8 next build",
-    "start": "next start",
+    "build": "next build",
+    "start": "node .next/standalone/server.js",
     "lint": "next lint"
   },
   "dependencies": {
