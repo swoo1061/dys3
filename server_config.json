@@ -1,0 +1,8 @@
+{
+    "server_port": 3000,
+    "uploads_path": "public/uploads",
+    "data_path": "data",
+    "auto_start": false,
+    "minimize_to_tray": true,
+    "auto_open_browser": true
+  }
